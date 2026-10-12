@@ -1,0 +1,150 @@
+# Reusable pipeline: build → (optional) dev:deploy
+# Child repos: uses: Keel-security/ci/.github/workflows/reusable-pipeline.yml@main
+name: reusable-pipeline
+
+on:
+  workflow_call:
+    inputs:
+      app_dir:
+        description: Path in the caller repo to build/deploy
+        type: string
+        required: false
+        default: "."
+      node_version:
+        description: Node.js version
+        type: string
+        required: false
+        default: "22"
+      build_command:
+        description: Override build (empty = scripts/build.sh auto-detect)
+        type: string
+        required: false
+        default: ""
+      deploy_tool:
+        description: sst | sam | custom
+        type: string
+        required: false
+        default: "sst"
+      deploy_command:
+        description: Required when deploy_tool=custom
+        type: string
+        required: false
+        default: ""
+      sst_stage:
+        description: SST stage for dev:deploy
+        type: string
+        required: false
+        default: "dev"
+      sst_path:
+        description: Directory (relative to app_dir) containing sst.config.ts
+        type: string
+        required: false
+        default: "."
+      aws_region:
+        description: AWS region for deploy
+        type: string
+        required: false
+        default: "us-east-1"
+      run_deploy:
+        description: Force deploy on/off (empty = auto by event)
+        type: string
+        required: false
+        default: ""
+    secrets:
+      AWS_ROLE_ARN:
+        description: IAM role for OIDC deploy (required for dev:deploy)
+        required: false
+      DATABASE_URL:
+        required: false
+      KEEL_API_KEY:
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout child repository
+        uses: actions/checkout@v4
+
+      - name: Checkout Keel CI templates
+        uses: actions/checkout@v4
+        with:
+          repository: Keel-security/ci
+          ref: main
+          path: .keel-ci
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+        continue-on-error: true
+
+      - name: Build
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          BUILD_COMMAND: ${{ inputs.build_command }}
+          NODE_VERSION: ${{ inputs.node_version }}
+        run: bash .keel-ci/scripts/build.sh
+
+  dev-deploy:
+    name: "dev:deploy"
+    needs: build
+    runs-on: ubuntu-latest
+    # Auto: deploy on push to mainline / manual dispatch; PRs build-only.
+    # Override with inputs.run_deploy = "true" | "false"
+    if: |
+      inputs.run_deploy == 'true' || (
+        inputs.run_deploy != 'false' && (
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' && (
+            github.ref == 'refs/heads/main' ||
+            github.ref == 'refs/heads/master' ||
+            github.ref == 'refs/heads/develop'
+          ))
+        )
+      )
+    environment: dev
+    steps:
+      - name: Checkout child repository
+        uses: actions/checkout@v4
+
+      - name: Checkout Keel CI templates
+        uses: actions/checkout@v4
+        with:
+          repository: Keel-security/ci
+          ref: main
+          path: .keel-ci
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Dev deploy (Lambda)
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          DEPLOY_TOOL: ${{ inputs.deploy_tool }}
+          DEPLOY_COMMAND: ${{ inputs.deploy_command }}
+          SST_STAGE: ${{ inputs.sst_stage }}
+          SST_PATH: ${{ inputs.sst_path }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          KEEL_API_KEY: ${{ secrets.KEEL_API_KEY }}
+        run: bash .keel-ci/scripts/dev-deploy.sh

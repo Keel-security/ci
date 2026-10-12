@@ -1,0 +1,28 @@
+# Copy into each child repo as .github/workflows/ci.yml
+name: ci
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  pipeline:
+    uses: Keel-security/ci/.github/workflows/reusable-pipeline.yml@main
+    with:
+      app_dir: "."
+      node_version: "22"
+      # build_command: "npm ci && npm run build"
+      deploy_tool: "sst"
+      sst_stage: "dev"
+      sst_path: "."
+      aws_region: "us-east-1"
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KEEL_API_KEY: ${{ secrets.KEEL_API_KEY }}
