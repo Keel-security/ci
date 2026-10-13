@@ -60,6 +60,26 @@ case "${DEPLOY_TOOL}" in
       OVERRIDES+=("LambdaSecurityGroupIds=${LAMBDA_SECURITY_GROUP_ID}")
     fi
 
+    # Auto custom DNS: stack keel-<service>-* → <service>.<api-dns-suffix>
+    # Infra publishes wildcard cert + zone once; this stack creates the subdomain.
+    if [[ -n "${SAM_STACK_NAME:-}" ]] && command -v aws >/dev/null 2>&1; then
+      SERVICE_KEY="${SERVICE_NAME:-$(echo "${SAM_STACK_NAME}" | sed -E 's/^keel-([a-z0-9]+)-.*/\1/')}"
+      if [[ -n "${SERVICE_KEY}" && "${SERVICE_KEY}" != "${SAM_STACK_NAME}" ]]; then
+        API_DNS_SUFFIX="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/api-dns-suffix" --query Parameter.Value --output text 2>/dev/null || true)"
+        API_HOSTED_ZONE_ID="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/api-hosted-zone-id" --query Parameter.Value --output text 2>/dev/null || true)"
+        API_CERTIFICATE_ARN="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/api-certificate-arn" --query Parameter.Value --output text 2>/dev/null || true)"
+        if [[ -n "${API_DNS_SUFFIX}" && "${API_DNS_SUFFIX}" != "None" && \
+              -n "${API_HOSTED_ZONE_ID}" && "${API_HOSTED_ZONE_ID}" != "None" && \
+              -n "${API_CERTIFICATE_ARN}" && "${API_CERTIFICATE_ARN}" != "None" ]]; then
+          OVERRIDES+=("ServiceName=${SERVICE_KEY}")
+          OVERRIDES+=("ApiDnsSuffix=${API_DNS_SUFFIX}")
+          OVERRIDES+=("ApiHostedZoneId=${API_HOSTED_ZONE_ID}")
+          OVERRIDES+=("ApiCertificateArn=${API_CERTIFICATE_ARN}")
+          echo "==> Custom DNS https://${SERVICE_KEY}.${API_DNS_SUFFIX}/"
+        fi
+      fi
+    fi
+
     sam build
     sam deploy --no-confirm-changeset --no-fail-on-empty-changeset \
       --stack-name "${SAM_STACK_NAME:-keel-dev}" \
