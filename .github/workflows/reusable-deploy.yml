@@ -57,6 +57,9 @@ on:
         required: false
       KEEL_API_KEY:
         required: false
+      GH_READ_TOKEN:
+        description: PAT to clone private github: deps
+        required: false
 
 permissions:
   id-token: write
@@ -92,6 +95,14 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
 
+      - name: Allow npm to fetch private GitHub deps
+        run: |
+          TOKEN="${GH_READ_TOKEN:-$GITHUB_TOKEN}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
+
       - name: Setup AWS SAM CLI
         if: ${{ inputs.deploy_tool == 'sam' }}
         uses: aws-actions/setup-sam@v2
@@ -117,4 +128,5 @@ jobs:
           KEEL_ENV: ${{ inputs.keel_env }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           KEEL_API_KEY: ${{ secrets.KEEL_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .keel-ci/scripts/dev-deploy.sh

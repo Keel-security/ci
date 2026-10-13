@@ -16,9 +16,17 @@ on:
         type: string
         required: false
         default: ""
+    secrets:
+      GH_READ_TOKEN:
+        description: PAT to clone private github: deps (e.g. keel-lambda-common)
+        required: false
 
 permissions:
   contents: read
+
+# For private github:Keel-security/keel-lambda-common deps, set repo secret
+# GH_READ_TOKEN (PAT with contents:read on that repo). Default GITHUB_TOKEN
+# cannot clone other private repos.
 
 jobs:
   build:
@@ -37,6 +45,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
+
+      - name: Allow npm to fetch private GitHub deps
+        run: |
+          TOKEN="${GH_READ_TOKEN:-$GITHUB_TOKEN}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
 
       - uses: actions/setup-go@v5
         with:
