@@ -18,7 +18,6 @@ on:
         default: ""
     secrets:
       GH_READ_TOKEN:
-        description: PAT to clone private github: deps (e.g. keel-lambda-common)
         required: false
 
 permissions:

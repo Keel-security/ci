@@ -58,7 +58,6 @@ on:
       KEEL_API_KEY:
         required: false
       GH_READ_TOKEN:
-        description: PAT to clone private github: deps
         required: false
 
 permissions:
