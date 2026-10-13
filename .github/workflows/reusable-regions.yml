@@ -1,0 +1,53 @@
+# Reads config/regions.json from this CI repo — single place to enable/disable US/EU.
+name: reusable-regions
+
+on:
+  workflow_call:
+    outputs:
+      us_enabled:
+        description: "true if US region deploy/infra should run"
+        value: ${{ jobs.regions.outputs.us_enabled }}
+      eu_enabled:
+        description: "true if EU region deploy/infra should run"
+        value: ${{ jobs.regions.outputs.eu_enabled }}
+
+permissions:
+  contents: read
+
+jobs:
+  regions:
+    name: regions
+    runs-on: ubuntu-latest
+    outputs:
+      us_enabled: ${{ steps.parse.outputs.us_enabled }}
+      eu_enabled: ${{ steps.parse.outputs.eu_enabled }}
+    steps:
+      - name: Checkout Keel CI (region config)
+        uses: actions/checkout@v4
+        with:
+          repository: Keel-security/ci
+          ref: main
+          path: .keel-ci
+          sparse-checkout: |
+            config/regions.json
+          sparse-checkout-cone-mode: false
+
+      - name: Parse regions.json
+        id: parse
+        run: |
+          set -euo pipefail
+          conf=".keel-ci/config/regions.json"
+          if [[ ! -f "$conf" ]]; then
+            echo "missing $conf — defaulting both regions on"
+            echo "us_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "eu_enabled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          us=$(jq -r '.us // true' "$conf")
+          eu=$(jq -r '.eu // true' "$conf")
+          # normalize to true/false strings
+          [[ "$us" == "true" ]] && us_out=true || us_out=false
+          [[ "$eu" == "true" ]] && eu_out=true || eu_out=false
+          echo "us_enabled=${us_out}" >> "$GITHUB_OUTPUT"
+          echo "eu_enabled=${eu_out}" >> "$GITHUB_OUTPUT"
+          echo "Regions: us=${us_out} eu=${eu_out}"

@@ -1,0 +1,120 @@
+# Deploy one region (e.g. job name "dev:deploy-us" in the caller).
+name: reusable-deploy
+
+on:
+  workflow_call:
+    inputs:
+      app_dir:
+        type: string
+        required: false
+        default: "."
+      node_version:
+        type: string
+        required: false
+        default: "22"
+      deploy_tool:
+        description: sst | sam | custom
+        type: string
+        required: false
+        default: "sam"
+      deploy_command:
+        type: string
+        required: false
+        default: ""
+      sst_stage:
+        type: string
+        required: false
+        default: "dev"
+      sst_path:
+        type: string
+        required: false
+        default: "."
+      aws_region:
+        description: AWS region (us-east-1, eu-central-1, …)
+        type: string
+        required: true
+      keel_env:
+        description: SSM path segment /keel/<keel_env>/… (e.g. dev-us, dev-eu)
+        type: string
+        required: true
+      github_environment:
+        description: GitHub Environment name (dev-us, dev-eu, …)
+        type: string
+        required: true
+      sam_stack_name:
+        type: string
+        required: false
+        default: "keel-dev"
+      run_deploy:
+        description: Force on/off (empty = auto)
+        type: string
+        required: false
+        default: ""
+    secrets:
+      AWS_ROLE_ARN:
+        required: false
+      DATABASE_URL:
+        required: false
+      KEEL_API_KEY:
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    if: |
+      inputs.run_deploy == 'true' || (
+        inputs.run_deploy != 'false' && (
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' && (
+            github.ref == 'refs/heads/main' ||
+            github.ref == 'refs/heads/master' ||
+            github.ref == 'refs/heads/develop'
+          ))
+        )
+      )
+    environment: ${{ inputs.github_environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout Keel CI templates
+        uses: actions/checkout@v4
+        with:
+          repository: Keel-security/ci
+          ref: main
+          path: .keel-ci
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Setup AWS SAM CLI
+        if: ${{ inputs.deploy_tool == 'sam' }}
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Deploy (${{ inputs.keel_env }} / ${{ inputs.aws_region }})
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          DEPLOY_TOOL: ${{ inputs.deploy_tool }}
+          DEPLOY_COMMAND: ${{ inputs.deploy_command }}
+          SST_STAGE: ${{ inputs.sst_stage }}
+          SST_PATH: ${{ inputs.sst_path }}
+          SAM_STACK_NAME: ${{ inputs.sam_stack_name }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          KEEL_ENV: ${{ inputs.keel_env }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          KEEL_API_KEY: ${{ secrets.KEEL_API_KEY }}
+        run: bash .keel-ci/scripts/dev-deploy.sh

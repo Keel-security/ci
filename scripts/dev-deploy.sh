@@ -10,7 +10,8 @@ SST_PATH="${SST_PATH:-.}"                  # relative to APP_DIR
 AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 
 cd "${APP_DIR}"
-echo "==> dev:deploy in $(pwd) tool=${DEPLOY_TOOL} region=${AWS_REGION}"
+KEEL_ENV="${KEEL_ENV:-dev}"
+echo "==> deploy in $(pwd) tool=${DEPLOY_TOOL} region=${AWS_REGION} keel_env=${KEEL_ENV}"
 
 export AWS_REGION
 export AWS_DEFAULT_REGION="${AWS_REGION}"
@@ -37,12 +38,35 @@ case "${DEPLOY_TOOL}" in
       echo "SAM template.yaml not found in ${APP_DIR}." >&2
       exit 1
     fi
+    if [[ ! -d node_modules ]] && [[ -f package.json ]]; then
+      npm install
+    fi
+
+    # Resolve platform config from keel-infra SSM when not provided as env secrets.
+    if [[ -z "${DATABASE_URL:-}" ]] && command -v aws >/dev/null 2>&1; then
+      DATABASE_URL="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/DATABASE_URL" --with-decryption --query Parameter.Value --output text 2>/dev/null || true)"
+      export DATABASE_URL
+    fi
+    if [[ -z "${LAMBDA_SUBNET_IDS:-}" ]] && command -v aws >/dev/null 2>&1; then
+      LAMBDA_SUBNET_IDS="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/LAMBDA_SUBNET_IDS" --query Parameter.Value --output text 2>/dev/null || true)"
+    fi
+    if [[ -z "${LAMBDA_SECURITY_GROUP_ID:-}" ]] && command -v aws >/dev/null 2>&1; then
+      LAMBDA_SECURITY_GROUP_ID="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/LAMBDA_SECURITY_GROUP_ID" --query Parameter.Value --output text 2>/dev/null || true)"
+    fi
+
+    OVERRIDES=("DatabaseUrl=${DATABASE_URL:?DATABASE_URL required (secret or SSM /keel/${KEEL_ENV}/DATABASE_URL)}")
+    if [[ -n "${LAMBDA_SUBNET_IDS:-}" && -n "${LAMBDA_SECURITY_GROUP_ID:-}" ]]; then
+      OVERRIDES+=("LambdaSubnetIds=${LAMBDA_SUBNET_IDS}")
+      OVERRIDES+=("LambdaSecurityGroupIds=${LAMBDA_SECURITY_GROUP_ID}")
+    fi
+
     sam build
     sam deploy --no-confirm-changeset --no-fail-on-empty-changeset \
       --stack-name "${SAM_STACK_NAME:-keel-dev}" \
       --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
       --resolve-s3 \
-      --region "${AWS_REGION}"
+      --region "${AWS_REGION}" \
+      --parameter-overrides "${OVERRIDES[@]}"
     ;;
   custom)
     if [[ -z "${DEPLOY_COMMAND}" ]]; then

@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# Region on/off: Keel-security/ci config/regions.json
+# Per-repo secret: AWS_ROLE_ARN only (DB URL from SSM)
+
+jobs:
+  regions:
+    uses: Keel-security/ci/.github/workflows/reusable-regions.yml@main
+
+  build:
+    uses: Keel-security/ci/.github/workflows/reusable-build.yml@main
+    with:
+      app_dir: "."
+      node_version: "20"
+      build_command: "npm install && npm run build"
+
+  deploy-us:
+    name: "dev:deploy-us"
+    needs: [regions, build]
+    if: ${{ needs.regions.outputs.us_enabled == 'true' }}
+    uses: Keel-security/ci/.github/workflows/reusable-deploy.yml@main
+    with:
+      app_dir: "."
+      node_version: "20"
+      deploy_tool: "sam"
+      aws_region: "us-east-1"
+      keel_env: "dev-us"
+      github_environment: "dev-us"
+      sam_stack_name: "keel-host-dev-us"
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
+  deploy-eu:
+    name: "dev:deploy-eu"
+    needs: [regions, build]
+    if: ${{ needs.regions.outputs.eu_enabled == 'true' }}
+    uses: Keel-security/ci/.github/workflows/reusable-deploy.yml@main
+    with:
+      app_dir: "."
+      node_version: "20"
+      deploy_tool: "sam"
+      aws_region: "eu-central-1"
+      keel_env: "dev-eu"
+      github_environment: "dev-eu"
+      sam_stack_name: "keel-host-dev-eu"
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}

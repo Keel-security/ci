@@ -1,64 +1,53 @@
 # Keel CI (GitHub Actions)
 
-Shared reusable workflows for all Keel child repositories.
+Shared reusable workflows + **central config** in this repo (works without org secrets on free plans).
 
-## Stages
+## What lives in the CI repo (set once)
 
-| Stage | Job | When |
-|-------|-----|------|
-| **build** | `build` | Every PR and push |
-| **dev:deploy** | `dev-deploy` | Push to `main` / `master` / `develop`, or `workflow_dispatch` |
+| File | Purpose |
+|------|---------|
+| [`config/regions.json`](config/regions.json) | Enable/disable `us` / `eu` for all children |
+| [`config/infra.json`](config/infra.json) | TF state bucket name, lock table, region metadata |
 
-`dev:deploy` deploys the app to the AWS **dev** environment (Lambda via SST/OpenNext by default).
+Example — disable EU everywhere:
 
-## Child repo setup
-
-1. In the child repo, add [`.github/workflows/ci.yml`](examples/child-repo/.github/workflows/ci.yml) (see also [control-panel example](examples/control-panel/.github/workflows/ci.yml)).
-2. Repo secrets:
-   - `AWS_ROLE_ARN` — IAM role trusted for GitHub OIDC
-   - `DATABASE_URL` — optional, for migrate/deploy
-   - `KEEL_API_KEY` — optional app secret
-3. App-specific deploy config stays in the child (`sst.config.ts`, etc.).
-
-```yaml
-jobs:
-  pipeline:
-    uses: Keel-security/ci/.github/workflows/reusable-pipeline.yml@main
-    with:
-      app_dir: "."
-      node_version: "22"
-      deploy_tool: "sst"
-      sst_stage: "dev"
-    secrets:
-      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+```json
+{ "us": true, "eu": false }
 ```
 
-## Inputs
+Push to `Keel-security/ci` `main`; next child runs pick it up via `reusable-regions.yml`.
 
-| Input | Default | Description |
-|-------|---------|-------------|
-| `app_dir` | `.` | Path to build/deploy |
-| `node_version` | `22` | Node version |
-| `build_command` | _(auto)_ | Override; else `scripts/build.sh` detects npm/go/python |
-| `deploy_tool` | `sst` | `sst` \| `sam` \| `custom` |
-| `deploy_command` | | Required if `deploy_tool=custom` |
-| `sst_stage` | `dev` | SST stage |
-| `sst_path` | `.` | Dir with `sst.config.ts` (relative to `app_dir`) |
-| `aws_region` | `us-east-1` | AWS region |
-| `run_deploy` | _(auto)_ | `true` / `false` to force deploy on/off |
+## What still must be per child repo
+
+GitHub does **not** inherit secrets from the reusable-workflow repo. On free private orgs you cannot use org secrets either.
+
+| Secret | Where | Why |
+|--------|-------|-----|
+| `AWS_ROLE_ARN` | Each private repo | OIDC assume-role (caller identity) |
+
+Optional overrides: `TF_STATE_BUCKET`, `TF_LOCK_TABLE`, `DATABASE_URL_US` / `DATABASE_URL_EU` (else SSM `/keel/dev-*/DATABASE_URL`).
+
+## Stages (multi-region)
+
+| Job | Source |
+|-----|--------|
+| **regions** | `reusable-regions.yml` ← `config/regions.json` |
+| **build** | `reusable-build.yml` |
+| **dev:deploy-us** / **dev:deploy-eu** | `reusable-deploy.yml` (skipped if region disabled) |
+
+## Child example
+
+See [`examples/keel-lambda-host/.github/workflows/ci.yml`](examples/keel-lambda-host/.github/workflows/ci.yml).
 
 ## Layout
 
 ```text
-.github/workflows/reusable-pipeline.yml   # build + dev:deploy
+config/regions.json
+config/infra.json
+.github/workflows/reusable-regions.yml
+.github/workflows/reusable-build.yml
+.github/workflows/reusable-deploy.yml
+.github/workflows/reusable-pipeline.yml
 scripts/build.sh
 scripts/dev-deploy.sh
-examples/child-repo/...
-examples/control-panel/...
 ```
-
-## Notes
-
-- PRs never deploy unless `run_deploy: true`.
-- Deploy job uses GitHub Environment `dev` (optional protection rules in the child or org).
-- Pin the reusable workflow to a tag/SHA in production children (`@v1` once you tag releases).

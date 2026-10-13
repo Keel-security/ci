@@ -18,7 +18,11 @@ fi
 if [[ -f package.json ]]; then
   echo "==> Node detected (package.json)"
   if command -v npm >/dev/null 2>&1; then
-    npm ci
+    if [[ -f package-lock.json ]]; then
+      npm ci
+    else
+      npm install
+    fi
     if npm run | grep -qE '^  build'; then
       npm run build
     else

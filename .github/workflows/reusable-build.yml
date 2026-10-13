@@ -1,0 +1,51 @@
+# Shared build only — children then call reusable-deploy per region.
+name: reusable-build
+
+on:
+  workflow_call:
+    inputs:
+      app_dir:
+        type: string
+        required: false
+        default: "."
+      node_version:
+        type: string
+        required: false
+        default: "22"
+      build_command:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout Keel CI templates
+        uses: actions/checkout@v4
+        with:
+          repository: Keel-security/ci
+          ref: main
+          path: .keel-ci
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+        continue-on-error: true
+
+      - name: Build
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          BUILD_COMMAND: ${{ inputs.build_command }}
+          NODE_VERSION: ${{ inputs.node_version }}
+        run: bash .keel-ci/scripts/build.sh

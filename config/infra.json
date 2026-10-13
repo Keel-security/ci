@@ -1,0 +1,17 @@
+{
+  "tf_state_bucket": "",
+  "tf_lock_table": "keel-tf-locks",
+  "regions": {
+    "us": {
+      "aws_region": "us-east-1",
+      "keel_env": "dev-us",
+      "state_key": "keel-infra/dev-us/terraform.tfstate"
+    },
+    "eu": {
+      "aws_region": "eu-central-1",
+      "keel_env": "dev-eu",
+      "state_key": "keel-infra/dev-eu/terraform.tfstate"
+    }
+  },
+  "_comment": "Set tf_state_bucket once here to avoid per-repo secrets (non-secret name). Leave empty to use repo secret TF_STATE_BUCKET. Region on/off: regions.json."
+}
