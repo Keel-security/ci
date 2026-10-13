@@ -1,5 +1,5 @@
 {
   "us": true,
-  "eu": true,
+  "eu": false,
   "_comment": "Set a region to false to skip plan/deploy for that region across all Keel repos. Edit in Keel-security/ci and push to main."
 }

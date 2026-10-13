@@ -1,6 +1,7 @@
 {
-  "tf_state_bucket": "",
+  "tf_state_bucket": "keel-tfstate-959895760440",
   "tf_lock_table": "keel-tf-locks",
+  "tf_state_region": "us-east-1",
   "regions": {
     "us": {
       "aws_region": "us-east-1",
@@ -13,5 +14,5 @@
       "state_key": "keel-infra/dev-eu/terraform.tfstate"
     }
   },
-  "_comment": "Set tf_state_bucket once here to avoid per-repo secrets (non-secret name). Leave empty to use repo secret TF_STATE_BUCKET. Region on/off: regions.json."
+  "_comment": "Create ONE S3 bucket + ONE DynamoDB lock table in tf_state_region only. US/EU stacks share that backend with different state_key. Resource regions come from regions.*.aws_region / tfvars."
 }
