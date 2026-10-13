@@ -108,8 +108,8 @@ jobs:
         with:
           use-installer: true
 
+      # Note: secrets.* cannot be used in if: conditions on reusable workflows.
       - name: Configure AWS credentials (OIDC)
-        if: ${{ secrets.AWS_ROLE_ARN != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
