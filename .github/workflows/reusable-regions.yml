@@ -1,4 +1,4 @@
-# Reads config/regions.json from this CI repo — single place to enable/disable US/EU.
+# Reads config/regions.json (+ infra.json) — enable/disable US/EU for all Keel repos.
 name: reusable-regions
 
 on:
@@ -10,6 +10,9 @@ on:
       eu_enabled:
         description: "true if EU region deploy/infra should run"
         value: ${{ jobs.regions.outputs.eu_enabled }}
+      matrix:
+        description: "JSON array of enabled regions for strategy.matrix.include"
+        value: ${{ jobs.regions.outputs.matrix }}
 
 permissions:
   contents: read
@@ -21,8 +24,9 @@ jobs:
     outputs:
       us_enabled: ${{ steps.parse.outputs.us_enabled }}
       eu_enabled: ${{ steps.parse.outputs.eu_enabled }}
+      matrix: ${{ steps.parse.outputs.matrix }}
     steps:
-      - name: Checkout Keel CI (region config)
+      - name: Checkout Keel CI config
         uses: actions/checkout@v4
         with:
           repository: Keel-security/ci
@@ -30,24 +34,60 @@ jobs:
           path: .keel-ci
           sparse-checkout: |
             config/regions.json
+            config/infra.json
           sparse-checkout-cone-mode: false
 
-      - name: Parse regions.json
+      - name: Parse regions + build matrix
         id: parse
         run: |
           set -euo pipefail
-          conf=".keel-ci/config/regions.json"
-          if [[ ! -f "$conf" ]]; then
-            echo "missing $conf — defaulting both regions on"
-            echo "us_enabled=true" >> "$GITHUB_OUTPUT"
-            echo "eu_enabled=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          regions=".keel-ci/config/regions.json"
+          infra=".keel-ci/config/infra.json"
+
+          us=true
+          eu=true
+          if [[ -f "$regions" ]]; then
+            us=$(jq -r '.us // true' "$regions")
+            eu=$(jq -r '.eu // true' "$regions")
           fi
-          us=$(jq -r '.us // true' "$conf")
-          eu=$(jq -r '.eu // true' "$conf")
-          # normalize to true/false strings
           [[ "$us" == "true" ]] && us_out=true || us_out=false
           [[ "$eu" == "true" ]] && eu_out=true || eu_out=false
           echo "us_enabled=${us_out}" >> "$GITHUB_OUTPUT"
           echo "eu_enabled=${eu_out}" >> "$GITHUB_OUTPUT"
+
+          # Build strategy.matrix.include from infra.json for enabled regions only.
+          # Avoids job-level if: with matrix (invalid in GHA).
+          if [[ -f "$infra" ]]; then
+            matrix=$(jq -c --arg us "$us_out" --arg eu "$eu_out" '
+              [
+                (if $us == "true" then {
+                  region_key: "us",
+                  aws_region: .regions.us.aws_region,
+                  keel_env: .regions.us.keel_env,
+                  state_key: .regions.us.state_key,
+                  tfvars: "environments/dev-us.tfvars",
+                  github_environment: "dev-us"
+                } else empty end),
+                (if $eu == "true" then {
+                  region_key: "eu",
+                  aws_region: .regions.eu.aws_region,
+                  keel_env: .regions.eu.keel_env,
+                  state_key: .regions.eu.state_key,
+                  tfvars: "environments/dev-eu.tfvars",
+                  github_environment: "dev-eu"
+                } else empty end)
+              ]
+            ' "$infra")
+          else
+            matrix='[]'
+            if [[ "$us_out" == "true" ]]; then
+              matrix=$(echo "$matrix" | jq -c '. + [{region_key:"us",aws_region:"us-east-1",keel_env:"dev-us",state_key:"keel-infra/dev-us/terraform.tfstate",tfvars:"environments/dev-us.tfvars",github_environment:"dev-us"}]')
+            fi
+            if [[ "$eu_out" == "true" ]]; then
+              matrix=$(echo "$matrix" | jq -c '. + [{region_key:"eu",aws_region:"eu-central-1",keel_env:"dev-eu",state_key:"keel-infra/dev-eu/terraform.tfstate",tfvars:"environments/dev-eu.tfvars",github_environment:"dev-eu"}]')
+            fi
+          fi
+
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
           echo "Regions: us=${us_out} eu=${eu_out}"
+          echo "Matrix: ${matrix}"
