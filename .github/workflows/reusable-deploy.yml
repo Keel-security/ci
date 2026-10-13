@@ -94,10 +94,12 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
 
-      - name: Allow npm to fetch private GitHub deps
+      - name: Allow npm to fetch GitHub deps (https + ssh)
         run: |
           TOKEN="${GH_READ_TOKEN:-$GITHUB_TOKEN}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "git@github.com:"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
