@@ -44,11 +44,12 @@ jobs:
           regions=".keel-ci/config/regions.json"
           infra=".keel-ci/config/infra.json"
 
+          # NOTE: jq's // treats false as missing — do NOT use `.eu // true`
           us=true
           eu=true
           if [[ -f "$regions" ]]; then
-            us=$(jq -r '.us // true' "$regions")
-            eu=$(jq -r '.eu // true' "$regions")
+            us=$(jq -r 'if has("us") then .us else true end' "$regions")
+            eu=$(jq -r 'if has("eu") then .eu else true end' "$regions")
           fi
           [[ "$us" == "true" ]] && us_out=true || us_out=false
           [[ "$eu" == "true" ]] && eu_out=true || eu_out=false
