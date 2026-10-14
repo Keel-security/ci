@@ -100,6 +100,26 @@ case "${DEPLOY_TOOL}" in
       --region "${AWS_REGION}" \
       --parameter-overrides "${OVERRIDES[@]}"
     ;;
+  s3-ui)
+    # Static UI → S3 + CloudFront invalidation (SSM: UI_BUCKET, UI_DISTRIBUTION_ID)
+    UI_BUCKET="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/UI_BUCKET" --query Parameter.Value --output text)"
+    UI_DISTRIBUTION_ID="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/UI_DISTRIBUTION_ID" --query Parameter.Value --output text)"
+    UI_URL="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/UI_URL" --query Parameter.Value --output text 2>/dev/null || true)"
+    SITE_DIR="${SITE_DIR:-dist/site}"
+    if [[ ! -d "${SITE_DIR}" ]]; then
+      echo "Missing ${SITE_DIR}. Run: npm run build:site" >&2
+      exit 1
+    fi
+    echo "==> Sync ${SITE_DIR} → s3://${UI_BUCKET}/"
+    aws s3 sync "${SITE_DIR}/" "s3://${UI_BUCKET}/" --delete --region "${AWS_REGION}"
+    echo "==> Invalidate CloudFront ${UI_DISTRIBUTION_ID}"
+    aws cloudfront create-invalidation \
+      --distribution-id "${UI_DISTRIBUTION_ID}" \
+      --paths "/*" \
+      --region us-east-1 \
+      >/dev/null
+    echo "==> UI ${UI_URL:-https://…}"
+    ;;
   custom)
     if [[ -z "${DEPLOY_COMMAND}" ]]; then
       echo "DEPLOY_TOOL=custom requires DEPLOY_COMMAND." >&2
@@ -109,7 +129,7 @@ case "${DEPLOY_TOOL}" in
     eval "${DEPLOY_COMMAND}"
     ;;
   *)
-    echo "Unknown DEPLOY_TOOL=${DEPLOY_TOOL} (use sst|sam|custom)." >&2
+    echo "Unknown DEPLOY_TOOL=${DEPLOY_TOOL} (use sst|sam|s3-ui|custom)." >&2
     exit 1
     ;;
 esac
