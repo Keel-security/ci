@@ -10,7 +10,7 @@ SST_PATH="${SST_PATH:-.}"                  # relative to APP_DIR
 AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 
 cd "${APP_DIR}"
-KEEL_ENV="${KEEL_ENV:-dev}"
+KEEL_ENV="${KEEL_ENV:-dev-us}"
 echo "==> deploy in $(pwd) tool=${DEPLOY_TOOL} region=${AWS_REGION} keel_env=${KEEL_ENV}"
 
 export AWS_REGION
@@ -58,6 +58,18 @@ case "${DEPLOY_TOOL}" in
     if [[ -n "${LAMBDA_SUBNET_IDS:-}" && -n "${LAMBDA_SECURITY_GROUP_ID:-}" ]]; then
       OVERRIDES+=("LambdaSubnetIds=${LAMBDA_SUBNET_IDS}")
       OVERRIDES+=("LambdaSecurityGroupIds=${LAMBDA_SECURITY_GROUP_ID}")
+    fi
+
+    # Cognito (optional) — browser JWT auth
+    if command -v aws >/dev/null 2>&1; then
+      COGNITO_USER_POOL_ID="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/COGNITO_USER_POOL_ID" --query Parameter.Value --output text 2>/dev/null || true)"
+      COGNITO_CLIENT_ID="$(aws ssm get-parameter --name "/keel/${KEEL_ENV}/COGNITO_CLIENT_ID" --query Parameter.Value --output text 2>/dev/null || true)"
+      if [[ -n "${COGNITO_USER_POOL_ID}" && "${COGNITO_USER_POOL_ID}" != "None" && \
+            -n "${COGNITO_CLIENT_ID}" && "${COGNITO_CLIENT_ID}" != "None" ]]; then
+        OVERRIDES+=("CognitoUserPoolId=${COGNITO_USER_POOL_ID}")
+        OVERRIDES+=("CognitoClientId=${COGNITO_CLIENT_ID}")
+        echo "==> Cognito JWT auth enabled"
+      fi
     fi
 
     # Auto custom DNS: stack keel-<service>-* → <service>.<api-dns-suffix>
